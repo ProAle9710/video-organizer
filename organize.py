@@ -38,24 +38,53 @@ def normalize_for_match(text: str) -> str:
     return text
 
 
+MONOSCHINOS_EPISODE_RE = re.compile(
+    r"^Ver\s+episodio\s+(\d+)\s+de\s+(.+?)\s*-\s*MonosChinos$",
+    re.IGNORECASE,
+)
+MONOSCHINOS_MOVIE_RE = re.compile(
+    r"^Ver\s+(.+?)\s*-\s*MonosChinos$",
+    re.IGNORECASE,
+)
+
+
+def normalize_monoschinos(filename_stem: str) -> str:
+    m = MONOSCHINOS_EPISODE_RE.match(filename_stem)
+    if m:
+        ep_num = m.group(1)
+        title = m.group(2).strip()
+        return f"{title} - Episodio {ep_num}"
+
+    m = MONOSCHINOS_MOVIE_RE.match(filename_stem)
+    if m:
+        inner = m.group(1).strip()
+        if not re.search(r"\b(movie|pelicula|film)\b", inner, re.IGNORECASE):
+            inner = inner + " Movie"
+        return inner
+
+    return filename_stem
+
+
 def parse_episode_info(filename_stem: str):
-    m = re.search(r"\bepisodio\s*(\d+)\b", filename_stem, flags=re.IGNORECASE)
+    stem = normalize_monoschinos(filename_stem)
+    m = re.search(r"\bepisodio\s*(\d+)\b", stem, flags=re.IGNORECASE)
     if not m:
         return None, None
 
     episode = int(m.group(1))
-    title_part = filename_stem[: m.start()].strip(" .-_")
+    title_part = stem[: m.start()].strip(" .-_")
     return title_part, episode
 
 
 def parse_movie_title(filename_stem: str):
-    norm = normalize_for_match(filename_stem)
+    stem = normalize_monoschinos(filename_stem)
+    norm = normalize_for_match(stem)
     if not re.search(r"\b(movie|pelicula|film)\b", norm):
         return None
 
     base = re.split(
         r"\b(movie|pelicula|película|film)\b",
-        filename_stem,
+        stem,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0]
