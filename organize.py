@@ -34,6 +34,7 @@ def safe_name(text: str) -> str:
 
 def normalize_for_match(text: str) -> str:
     text = strip_accents(text).lower()
+    text = re.sub(r"[-_]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -49,20 +50,23 @@ MONOSCHINOS_MOVIE_RE = re.compile(
 
 
 def normalize_monoschinos(filename_stem: str) -> str:
-    m = MONOSCHINOS_EPISODE_RE.match(filename_stem)
+    # Limpiar sufijos _1, _2 que agregan los navegadores en descargas duplicadas
+    stem = re.sub(r"_\d+$", "", filename_stem)
+
+    m = MONOSCHINOS_EPISODE_RE.match(stem)
     if m:
         ep_num = m.group(1)
         title = m.group(2).strip()
         return f"{title} - Episodio {ep_num}"
 
-    m = MONOSCHINOS_MOVIE_RE.match(filename_stem)
+    m = MONOSCHINOS_MOVIE_RE.match(stem)
     if m:
         inner = m.group(1).strip()
         if not re.search(r"\b(movie|pelicula|film)\b", inner, re.IGNORECASE):
             inner = inner + " Movie"
         return inner
 
-    return filename_stem
+    return stem
 
 
 def parse_episode_info(filename_stem: str):
@@ -126,6 +130,20 @@ def extract_season(title_part: str):
     return raw, "Temporada 1"
 
 
+def find_existing_series_folder(root: Path, computed_name: str) -> str:
+    """Busca en root una carpeta existente cuyo nombre normalizado coincida
+    con computed_name normalizado. Si existe, devuelve su nombre real; si no,
+    devuelve computed_name."""
+    norm_computed = normalize_for_match(computed_name)
+    try:
+        for child in root.iterdir():
+            if child.is_dir() and normalize_for_match(child.name) == norm_computed:
+                return child.name
+    except (OSError, PermissionError):
+        pass
+    return computed_name
+
+
 def compute_target(path: Path, root: Path):
     title_part, episode = parse_episode_info(path.stem)
     if title_part is not None:
@@ -133,12 +151,16 @@ def compute_target(path: Path, root: Path):
         base_title = safe_name(base_title)
         season_folder = safe_name(season_folder)
 
+        # Reutilizar carpeta serie existente si hay coincidencia normalizada
+        base_title = find_existing_series_folder(root, base_title)
+
         target_dir = root / base_title / season_folder
         return target_dir / path.name
 
     movie_title = parse_movie_title(path.stem)
     if movie_title is not None:
         movie_title = safe_name(movie_title)
+        movie_title = find_existing_series_folder(root, movie_title)
         return root / movie_title / "Movies" / path.name
 
     return None
